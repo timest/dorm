@@ -64,7 +64,14 @@ func (m *_modelCache) getByInterface(d interface{}) *modelInfo {
         return nil
     }
     mn := getModelName(val.Elem())
-    return m.get(mn)
+    mi := m.get(mn)
+    // 如果 cache里还没有注册过model，自动注册
+    if mi == nil {
+        mi = &modelInfo{name: mn}
+        parseField(val.Elem(), mi)
+        modelCache.set(mn, mi)
+    }
+    return mi
 }
 
 func (m *_modelCache) set(name string, mi *modelInfo) bool {

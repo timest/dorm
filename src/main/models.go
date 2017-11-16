@@ -2,7 +2,6 @@ package main
 
 import (
     "reflect"
-    "dorm"
 )
 type Model interface {
     FF(Model)
@@ -39,8 +38,4 @@ type Message struct {
     User *User
     Post *Post
     Content string
-}
-
-func init() {
-    dorm.Register(new(User))
 }

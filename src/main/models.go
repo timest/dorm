@@ -27,10 +27,18 @@ type User struct {
     Score float64  `default:"11"`
 }
 
+func (u *User) TableName() string {
+    return "user"
+}
+
 type Post struct {
     BaseModel
     User *User
     Name string
+}
+
+func (p *Post) TableName() string {
+    return "post"
 }
 
 type Message struct {

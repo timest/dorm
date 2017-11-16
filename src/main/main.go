@@ -41,7 +41,8 @@ func main() {
     defer orm.Close()
     
     //createUser()
-    getUser()
+    //getUser()
+    createPost()
 }
 
 func createUser() {
@@ -51,13 +52,30 @@ func createUser() {
 }
 
 func createPost() {
+    u := new(User)
+    orm.Pk(u, 4)
+    
+    p := new(Post)
+    p.User = u
+    p.Name = "moyi is shabi"
+    
+    orm.Create(p)
     
 }
 
 func getUser() {
     u := new(User)
-    err = orm.Pk(u, 1)
-    if err != nil {
-        log.Fatal(err)
-    }
+ 
+    err = orm.Pk(u, 9)
+    log.Info("U:", u, u.Id)
+   
+    
+    
+    
+    //name := "timest"
+    //var r interface{}
+    //r = &name
+    //val := reflect.Indirect(reflect.ValueOf(r)).Interface()
+    //log.Info(val.(string), "s s")
+    //log.Info(val.(string))
 }

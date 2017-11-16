@@ -11,9 +11,6 @@ type User struct {
     Age uint16      `default:"18"`
     Score float64  `default:"11"`
 }
-func init() {
-    Orm.Register(new(User))
-}
 
 // main.go
 func main() {

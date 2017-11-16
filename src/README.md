@@ -1,4 +1,4 @@
-# dorm
+# Orm
 golang 的orm
 
 ## 使用
@@ -12,13 +12,13 @@ type User struct {
     Score float64  `default:"11"`
 }
 func init() {
-    dorm.Register(new(User))
+    Orm.Register(new(User))
 }
 
 // main.go
 func main() {
-    orm := new(dorm.Dorm)
-    db, err := sql.Open("mysql", "root:123456@/dorm")
+    orm := new(Orm.Orm)
+    db, err := sql.Open("mysql", "root:123456@/Orm")
     errCheck(err)
     errCheck(db.Ping())
     defer db.Close()
@@ -27,11 +27,16 @@ func main() {
     createUser(orm)
 }
 
-func createUser(o *dorm.Dorm) {
+func createUser(o *Orm.Orm) {
     
     u := new(User)
-    dorm.Defaults(u) // 自动填充default值
+    Orm.Defaults(u) // 自动填充default值
     o.Create(u)
 }
 
 ```
+
+## structtag
+如果tag值有key-value的，直接写在tag里，如：`default:"timest" size:"255"`。
+
+如果是单独的值，需要包含在`orm`里，如果多值用`,`分隔,如`orm:"unique,null,pk"`

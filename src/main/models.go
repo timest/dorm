@@ -1,8 +1,8 @@
 package main
 
 import (
-    "dorm"
     "reflect"
+    "dorm"
 )
 type Model interface {
     FF(Model)
@@ -10,7 +10,7 @@ type Model interface {
 
 type BaseModel struct {
     Model
-    Id int
+    Id uint     `orm:"pk"`
 }
 
 func (bm *BaseModel) FF(m Model) {

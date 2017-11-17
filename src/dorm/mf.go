@@ -27,32 +27,12 @@ var dbfiled = map[string]string{
 type modelInfo struct {
     name   string   // model的名字
     table  string   // 表格名称
-    fields []*field // models的field集合
+    fields fieldTable // models的field集合
+    typ     reflect.Type
 }
 
-
-func (m *modelInfo) columns(pk bool) []string {
-    var _fs []string
-    for _, f := range m.fields {
-        if pk == false && f.pk == true {
-            // 不需要主键
-            continue
-        }
-        _fs = append(_fs, f.name)
-    }
-    return _fs
-}
-
-func (m *modelInfo) fs(pk bool) []*field {
-    var _fs []*field
-    for _, f := range m.fields {
-        if pk == false && f.pk == true {
-            // 不需要主键
-            continue
-        }
-        _fs = append(_fs, f)
-    }
-    return _fs
+func (mi *modelInfo) String() string {
+    return fmt.Sprintf("[name:%s, tableName: %s, fields:%v, typ: %s]", mi.name, mi.table, mi.fields.cols(nil), mi.typ.Name())
 }
 
 //存储register过的model信息
@@ -64,7 +44,7 @@ type _modelCache struct {
     cache map[string]*modelInfo
 }
 
-func (m *_modelCache) _get(name string) *modelInfo {
+func (m *_modelCache) getByName(name string) *modelInfo {
     for k := range m.cache {
         if k == name {
             return m.cache[k]
@@ -73,28 +53,18 @@ func (m *_modelCache) _get(name string) *modelInfo {
     return nil
 }
 
-func (m *_modelCache) getByValue(val reflect.Value) *modelInfo {
-    if val.Kind() != reflect.Ptr {
-        return nil
-    }
-    _struct := val.Elem()
+func (m *_modelCache) get(d interface{}) *modelInfo {
+    val := reflect.ValueOf(d)
+    _struct := reflect.Indirect(val)
     mn := getModelName(_struct)
-    mi := m._get(mn)
-    // 如果 cache里还没有注册过model，自动注册
+    mi := m.getByName(mn)
+    // 如果 cache里还没有注册过model，注册
     if mi == nil {
-        mi = &modelInfo{name: mn, table: tableName(val)}
-        parseField(val.Elem(), mi)
-        debugInfo("成功注册model:", mi, "字段", mi.columns(true))
-        modelCache.set(mn, mi)
+        log.Fatalf("model %s 为被注册register!", mn)
     }
     return mi
 }
 
-func (m *_modelCache) get(d interface{}) *modelInfo {
-    // 对象的地址，ptr
-    val := reflect.ValueOf(d)
-    return m.getByValue(val)
-}
 
 func tableName(r reflect.Value) string{
     var m reflect.Value
@@ -124,58 +94,6 @@ func (m *_modelCache) String() string {
     return buf.String()
 }
 
-// 遍历struct的field，将name 和 type 写入到mi的field里
-// 如果遇到embed的struct，递归进去读取（如ID）
-// 顺便处理field的tag属性，如 pk
-func parseField(e reflect.Value, mi *modelInfo) {
-    for i := 0; i < e.NumField(); i++ {
-        fd := e.Field(i)
-        // 如果遇到struct(如basemodel)就递归进去继续读取字段
-        if fd.Kind() == reflect.Interface {
-            continue
-        }else if fd.Kind() == reflect.Struct {
-            parseField(fd, mi)
-        } else {
-            sf := e.Type().Field(i)
-            // 只处理能识别的类型 (目前是：string uint int float )  interface 直接continue
-            if _, ok := dbfiled[sf.Type.Name()]; !ok {
-                if strings.Index(sf.Type.String(), ".") != -1 { // todo: 有 . 就是外键吗？如xxx.xxx
-                    var rel string = sf.PkgPath
-                    if strings.HasPrefix(sf.PkgPath, "*") {
-                        rel = rel[1:]
-                    }
-                    f := &field{
-                        name: sf.Name + "_id",
-                        typ: "uint64",
-                        fk: true,
-                        rel: rel,
-                    }
-                    // parseTag(f, &sf.Tag)  // todo: 外键应该没有特殊的 tag
-                    mi.fields = append(mi.fields, f)
-                }
-                continue
-            }
-            f := &field{
-                name: sf.Name,
-                typ: sf.Type.Name(),
-            }
-            parseTag(f, &sf.Tag)
-            mi.fields = append(mi.fields, f)
-        }
-    }
-}
-
-func parseTag(f *field, tag *reflect.StructTag) {
-    t := tag.Get("orm")
-    tList := strings.Split(t, ",")
-    for _, k := range tList {
-        switch k {
-        case "pk":
-            f.pk = true
-        }
-    }
-}
-
 type field struct {
     name string
     typ  string
@@ -186,4 +104,40 @@ type field struct {
 
 func (f *field) String() string {
     return fmt.Sprintf("%s[ type:%s pk:%v ];", f.name, f.typ, f.pk)
+}
+
+
+type fieldTable []*field
+
+type fieldFilter struct {
+    pk bool
+    raw bool  // 是否需要将 外键 的字段加上  _id 后缀, true
+}
+
+func (f fieldTable) cols(ff *fieldFilter) []string {
+    var fs []string
+    for _, field := range f {
+        if ff == nil { // 如果 fieldFilter 为空，返回 包含ID 和 不含 _id 的外键名
+            fs = append(fs, field.name)
+        } else {
+            // 不需要主键
+            if ff.pk == false && field.pk == true {
+                continue
+            }
+            // 外键是否加上后缀
+            if !ff.raw && field.fk {
+                fs = append(fs, field.name + "_id")
+            } else {
+                fs = append(fs, field.name)
+            }
+        }
+    }
+    return fs
+}
+
+func (f fieldTable) index(i int) *field {
+    if i < len(f) {
+        return f[i]
+    }
+    return nil
 }

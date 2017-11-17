@@ -42,12 +42,36 @@ func main() {
     
     //createUser()
     //getUser()
-    createPost()
+    //createPost()
+    //getPost()
+    createMessage()
+}
+
+func getPost() {
+    p := new(Post)
+    orm.Pk(p, 1)
+    
+    //u1 := &User{
+    //    Name: "test1",
+    //}
+    //val1 := reflect.ValueOf(u1)
+    //ind1 := reflect.Indirect(val1)
+    //log.Info(ind1.Type())
+    ////name := "main.user"
+    //
+    //v := reflect.New(reflect.TypeOf(*u1))
+    //v2 := v.Elem().Interface().(User)
+    //
+    //log.Info(v,v2)
+    //log.Info(u1)
+    //
+    ////v3 := reflect.New(val1.Type())
+    ////log.Info(v3)
 }
 
 func createUser() {
     u1 := new(User)
-    dorm.Defaults(u1) // 自动填充default
+    orm.Defaults(u1) // 自动填充default
     orm.Create(u1)
 }
 
@@ -68,14 +92,25 @@ func getUser() {
  
     err = orm.Pk(u, 9)
     log.Info("U:", u, u.Id)
-   
+}
+
+func createMessage() {
+    u := new(User)
+    orm.Pk(u, 6)
     
+    p := new(Post)
+    orm.Pk(p, 1)
     
-    
-    //name := "timest"
-    //var r interface{}
-    //r = &name
-    //val := reflect.Indirect(reflect.ValueOf(r)).Interface()
-    //log.Info(val.(string), "s s")
-    //log.Info(val.(string))
+    //m := new(Message)
+    //orm.Defaults(m)
+    //m.User = u
+    //m.Post = p
+    //
+    //orm.Create(m)
+    m := &Message {
+        User: u,
+        Post: p,
+        Content: "张信哲（再多的苦我也愿意背)",
+    }
+    orm.Create(m)
 }

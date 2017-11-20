@@ -18,6 +18,17 @@ type User struct {
     Age   uint16      `default:"18"`
     Score float64  `default:"11"`
 }
+type Post struct {
+    BaseModel
+    User *User
+    Name string
+}
+type Message struct {
+    BaseModel
+    User    *User
+    Post    *Post
+    Content string `default:"没有填写短信内容"`
+}
 
 func (u *User) TableName() string {
     return "user"
@@ -27,21 +38,8 @@ func (u *User) String() string {
     return fmt.Sprintf("Name: %s   Age: %d  Score: %f", u.Name, u.Age, u.Score)
 }
 
-type Post struct {
-    BaseModel
-    User *User
-    Name string
-}
-
 func (p *Post) TableName() string {
     return "post"
-}
-
-type Message struct {
-    BaseModel
-    User    *User
-    Post    *Post
-    Content string `default:"没有填写短信内容"`
 }
 
 func (m *Message) TableName() string {

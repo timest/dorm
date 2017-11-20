@@ -25,10 +25,10 @@ var dbfiled = map[string]string{
 
 // 存储model的信息
 type modelInfo struct {
-    name   string   // model的名字
-    table  string   // 表格名称
+    name   string     // model的名字
+    table  string     // 表格名称
     fields fieldTable // models的field集合
-    typ     reflect.Type
+    typ    reflect.Type
 }
 
 func (mi *modelInfo) String() string {
@@ -58,15 +58,13 @@ func (m *_modelCache) get(d interface{}) *modelInfo {
     _struct := reflect.Indirect(val)
     mn := getModelName(_struct)
     mi := m.getByName(mn)
-    // 如果 cache里还没有注册过model，注册
     if mi == nil {
-        log.Fatalf("model %s 为被注册register!", mn)
+        log.Fatalf("model %s 未被注册register!", mn)
     }
     return mi
 }
 
-
-func tableName(r reflect.Value) string{
+func tableName(r reflect.Value) string {
     var m reflect.Value
     m = r.MethodByName("TableName") // (x *Object)
     if m.IsValid() {
@@ -98,7 +96,7 @@ type field struct {
     name string
     typ  string
     pk   bool
-    fk   bool  // foreignkey
+    fk   bool   // foreignkey
     rel  string // 存放外键的 mn: modelname
 }
 
@@ -106,18 +104,18 @@ func (f *field) String() string {
     return fmt.Sprintf("%s[ type:%s pk:%v ];", f.name, f.typ, f.pk)
 }
 
-
 type fieldTable []*field
 
 type fieldFilter struct {
-    pk bool
-    raw bool  // 是否需要将 外键 的字段加上  _id 后缀, true
+    pk  bool
+    raw bool // 是否需要将 外键 的字段加上  _id 后缀, true
 }
 
 func (f fieldTable) cols(ff *fieldFilter) []string {
     var fs []string
     for _, field := range f {
-        if ff == nil { // 如果 fieldFilter 为空，返回 包含ID 和 不含 _id 的外键名
+        if ff == nil {
+            // 如果 fieldFilter 为空，返回 包含ID 和 不含 _id 的外键名
             fs = append(fs, field.name)
         } else {
             // 不需要主键

@@ -1,30 +1,21 @@
 package main
 
 import (
-    "reflect"
     "fmt"
 )
-type Model interface {
-    FF(Model)
-}
 
 type BaseModel struct {
-    Model
     Id uint     `orm:"pk"`
 }
 
-func (bm *BaseModel) FF(m Model) {
-    val := reflect.ValueOf(m)
-    ind := reflect.Indirect(val)
-    log.Info(val, ind)
-    for i := 0; i < ind.NumField(); i++ {
-        log.Info(ind.Type().Field(i).Name)
-    }
+func (bm *BaseModel) FF() {
+    fmt.Println("ff")
 }
+
 type User struct {
     BaseModel
-    Name string     `default:"default"`
-    Age uint16      `default:"18"`
+    Name  string     `default:"default"`
+    Age   uint16      `default:"18"`
     Score float64  `default:"11"`
 }
 
@@ -48,8 +39,8 @@ func (p *Post) TableName() string {
 
 type Message struct {
     BaseModel
-    User *User
-    Post *Post
+    User    *User
+    Post    *Post
     Content string `default:"没有填写短信内容"`
 }
 

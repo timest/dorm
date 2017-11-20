@@ -29,8 +29,15 @@ func Open(driverName, dataSourceName string) (*Orm, error) {
     }, nil
 }
 
-func (d *Orm) Close() {
-    d.DB.Close()
+func (o *Orm) Close() {
+    o.DB.Close()
+}
+
+func (o *Orm) Query(d string) *QuerySet {
+    q := &QuerySet{
+        orm: o,
+    }
+    return q.Query(d)
 }
 
 func register(d interface{}) {
@@ -39,7 +46,6 @@ func register(d interface{}) {
     mn := getModelName(_struct)
     mi := &modelInfo{name: mn, table: tableName(val), typ: _struct.Type()}
     parseField(val.Elem(), mi)
-    debugInfo("成功注册model:", mi)
     modelCache.set(mn, mi)
 }
 
@@ -52,13 +58,14 @@ func parseField(e reflect.Value, mi *modelInfo) {
         // 如果遇到struct(如basemodel)就递归进去继续读取字段
         if fd.Kind() == reflect.Interface {
             continue
-        }else if fd.Kind() == reflect.Struct {
+        } else if fd.Kind() == reflect.Struct {
             parseField(fd, mi)
         } else {
             sf := e.Type().Field(i)
             // 只处理能识别的类型 (目前是：string uint int float )  interface 直接continue
             if _, ok := dbfiled[sf.Type.Name()]; !ok {
-                if strings.Index(sf.Type.String(), ".") != -1 { // todo: 有 . 就是外键吗？如xxx.xxx
+                if strings.Index(sf.Type.String(), ".") != -1 {
+                    // todo: 有 . 就是外键吗？如xxx.xxx
                     var rel string = sf.PkgPath
                     if strings.HasPrefix(sf.PkgPath, "*") {
                         rel = rel[1:]
@@ -95,7 +102,7 @@ func parseTag(f *field, tag *reflect.StructTag) {
     }
 }
 
-func (d *Orm) Register(data ...interface{}) {
+func (o *Orm) Register(data ...interface{}) {
     for _, d := range data {
         register(d)
     }
@@ -104,8 +111,9 @@ func (d *Orm) Register(data ...interface{}) {
 type BaseModel struct {
     Id uint     `orm:"pk"`
 }
+
 func getValueList(data interface{}, fList []string) []interface{} {
-    debugInfo("为", fList, " 准备插入的数据")
+    log.Info("为", fList, " 准备插入的数据")
     val := reflect.ValueOf(data) // data 是 &Object
     var out []interface{}
     for _, k := range fList {
@@ -128,7 +136,7 @@ func getValueList(data interface{}, fList []string) []interface{} {
             out = append(out, v.Elem().FieldByName("Id").Uint())
         default:
             if strings.Index(k, "_id") != -1 {
-                k = k[0:len(k)-3]
+                k = k[0:len(k) - 3]
                 goto CheckFiled
             }
             log.Info("没有匹配的字段名:", k)
@@ -140,7 +148,7 @@ func getValueList(data interface{}, fList []string) []interface{} {
     return out
 }
 
-func (Orm *Orm) Create(data ...interface{}) {
+func (o *Orm) Create(data ...interface{}) {
     for _, d := range data {
         mi := modelCache.get(d)
         cols := mi.fields.cols(&fieldFilter{})  // 不需要主键
@@ -150,88 +158,86 @@ func (Orm *Orm) Create(data ...interface{}) {
         }
         log.Info("Create: 待填充数据:", getValueList(d, cols))
         pl := getValueList(d, cols)
-        //var vals []strings
         rawSql := fmt.Sprintf("insert into %s(%s) values(%s)", mi.table, strings.Join(cols, ","), strings.Join(payload, ","))
         log.Info("query:", rawSql)
-        o, err := Orm.DB.Exec(rawSql, pl...)
+        o, err := o.DB.Exec(rawSql, pl...)
         errCheck(err)
         logResult(o)
     }
 }
 
-
-
-// 通过
-func (o *Orm) Pk(d interface{}, id uint) error {
-    mi := modelCache.get(d)
-    cols := mi.fields.cols(&fieldFilter{pk: true})
-    rawCols := mi.fields.cols(&fieldFilter{pk: true, raw: true})
-    //log.Info(mi.fields, cols)
-    ref := make([]interface{}, len(cols))
-    for i, _ := range ref {
-        var t interface{}
-        ref[i] = &t
+func (o *Orm) retrieve(d interface{}, q *QuerySet) error {
+    var slice bool = false
+    ind := reflect.Indirect(reflect.ValueOf(d))
+    typ := ind.Type()
+    if ind.Kind() == reflect.Slice {
+        slice = true
+        typ = ind.Type().Elem()
     }
-    
-    query := fmt.Sprintf("select %s from %s where id = %d", strings.Join(cols, ","), mi.table, id)
-    log.Info("query:", query)
-    err := o.DB.QueryRow(query).Scan(ref...)
+    mi := modelCache.getByName(typ.Name())
+    rawCols := mi.fields.cols(&fieldFilter{pk: true, raw: true})
+    log.Info("query:", q.sql())
+    rows, err := o.DB.Query(q.sql())
     if err != nil {
         log.Fatal(err)
     }
-    val := reflect.ValueOf(d)
-    ind := reflect.Indirect(val)
-    for i, r := range ref {
-        xxx := ind.FieldByName(rawCols[i])  // 这里要把
-        v := reflect.Indirect(reflect.ValueOf(r)).Interface()
-        //switch vv := v.(type) {
-        //case []byte:
-        //    log.Info("[]byte", string(vv))
-        //case string:
-        //    log.Info("string", string(vv))
-        //}
-        switch mi.fields.index(i).typ {
-        case "string":
-            xxx.SetString(string(v.([]uint8)))
-        case "uint", "uint16", "uint32", "uint64":
-            _v, _ := strconv.ParseUint(string(v.([]uint8)), 10, 64)
-            xxx.SetUint(_v)
-        case "int", "int16", "int32", "int64":
-            _v, _ := strconv.ParseInt(string(v.([]uint8)), 10, 64)
-            xxx.SetInt(_v)
-        case "float32", "float64":
-            _v, _ := strconv.ParseFloat(string(v.([]uint8)), 64)
-            xxx.SetFloat(_v)
-        case "ptr":
-            obj := reflect.New(modelCache.getByName(rawCols[i]).typ)
-            _v, _ := strconv.ParseUint(string(v.([]uint8)), 10, 64)
-            o.Pk(obj.Interface(), uint(_v))
-            xxx.Set(obj)
-        default:
-            log.Info("ops，忘了考虑这个类型:", mi.fields.index(i).typ)
+    defer rows.Close()
+    for rows.Next() {
+        ref := make([]interface{}, len(rawCols))
+        for i, _ := range ref {
+            var t interface{}
+            ref[i] = &t
+        }
+        var obj reflect.Value
+        if slice {
+            obj = reflect.New(ind.Type().Elem()).Elem()
+        } else {
+            obj = ind
+        }
+        
+        rows.Scan(ref...)
+        for i, r := range ref {
+            xxx := obj.FieldByName(rawCols[i])
+            v := reflect.Indirect(reflect.ValueOf(r)).Interface()
+            switch mi.fields.index(i).typ {
+            case "string":
+                xxx.SetString(string(v.([]uint8)))
+            case "uint", "uint16", "uint32", "uint64":
+                _v, _ := strconv.ParseUint(string(v.([]uint8)), 10, 64)
+                xxx.SetUint(_v)
+            case "int", "int16", "int32", "int64":
+                _v, _ := strconv.ParseInt(string(v.([]uint8)), 10, 64)
+                xxx.SetInt(_v)
+            case "float32", "float64":
+                _v, _ := strconv.ParseFloat(string(v.([]uint8)), 64)
+                xxx.SetFloat(_v)
+            case "ptr":
+                obj := reflect.New(modelCache.getByName(rawCols[i]).typ)
+                _v, _ := strconv.ParseUint(string(v.([]uint8)), 10, 64)
+                o.Pk(obj.Interface(), uint(_v))
+                xxx.Set(obj)
+            default:
+                log.Info("ops，忘了考虑这个类型:", mi.fields.index(i).typ)
+            }
+        }
+        if slice {
+            ind.Set(reflect.Append(ind, obj))
         }
     }
-    debugInfo("PK获取到的数据:", d)
     return nil
 }
 
-func (d *Orm) Retrieve(data interface{}, filter string) {
-    
+func (o *Orm) Pk(d interface{}, id uint) error {
+    q := &QuerySet{
+        orm: o,
+        where: fmt.Sprintf("id = %d", id),
+    }
+    q.marshal(d)
+    return o.retrieve(d, q)
 }
-
-func (d *Orm) Update(data ...interface{}) {
-    
-}
-
-func (d *Orm) Delete(data ...interface{}) {
-    
-}
-
-
-
 
 // 自动填充strcut的default tag
-func (d *Orm) Defaults(m interface{}) {
+func (o *Orm) Defaults(m interface{}) {
     ps := reflect.ValueOf(m)
     if ps.Kind() != reflect.Ptr {
         return
@@ -291,7 +297,23 @@ func (d *Orm) Defaults(m interface{}) {
     return
 }
 
+func logResult(o sql.Result) {
+    a, _ := o.LastInsertId()
+    b, _ := o.RowsAffected()
+    log.Info("db.exec insert:", a, b)
+}
 
+func errCheck(err error) {
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+
+func getModelName(d reflect.Value) string {
+    dtype := d.Type()
+    return dtype.Name()
+    //return fmt.Sprintf("%s.%s", dtype.PkgPath(), dtype.Name())
+}
 
 
 

@@ -4,6 +4,7 @@ import (
     _ "github.com/go-sql-driver/mysql"
     "github.com/Sirupsen/logrus"
     "dorm"
+    "fmt"
 )
 
 var err error
@@ -11,27 +12,6 @@ var orm *dorm.Orm
 
 var log = logrus.New()
 // 用户(user) 可以发一个帖子（post）， 一个post可以有多个 留言（message），每个message都有User和post外键
-//
-//func createPost(u *User, name string) {
-//    o, err := db.Exec(`insert into post(user_id, name) values(?, ?)`, u.Id, name)
-//    errCheck(err)
-//    logResult(o)
-//}
-//
-//func getUser(id int) (u *User, err error) {
-//    u = new(User)
-//    err = db.QueryRow(`select id, name, age, score from user where id = ?`, id).Scan(&u.Id, &u.Name, &u.Age, &u.Score)
-//    return
-//}
-//
-//func getPost(id int) (p *Post, err error) {
-//    p = new(Post)
-//    var user_id int
-//    err = db.QueryRow(`select id, user_id, name from post where id = ?`, id).Scan(&p.Id, &user_id, &p.Name)
-//    u, _ := getUser(user_id)
-//    p.User = u
-//    return
-//}
 
 func main() {
     orm, err = dorm.Open("mysql", "root:123456@/dorm")
@@ -44,29 +24,54 @@ func main() {
     //getUser()
     //createPost()
     //getPost()
-    createMessage()
+    //createMessage()
+    
+     //queryUser()
+    queryPost()
+    queryOnePost()
+}
+
+
+type Queryset struct {
+    where string
+    table string
+}
+
+func queryPost() {
+    var posts []Post
+    orm.Query("name = 'I can go home'").Desc("id").All(&posts)
+    for _, p := range posts {
+        log.Info("pp: ", p.Id, p.Name, p.User.Age)
+    }
+    
+}
+
+func queryOnePost() {
+    var post Post
+    orm.Query("name = 'I can go home'").Desc("id").First(&post)
+    log.Info("out: ", post)
+}
+
+func queryUser() {
+    var users []User
+    orm.Query("name = 'ccceo'").All(&users)
+    log.Info("检索的结果是:", users)
+    for _, u := range users {
+        log.Info(u.Id)
+    }
+    // todo: age = 123
+    // age < 12
+    // age > 234
+    // score == 23423.0234
+    // score > 1234
+    // score < 1234
+    
 }
 
 func getPost() {
     p := new(Post)
     orm.Pk(p, 1)
-    
-    //u1 := &User{
-    //    Name: "test1",
-    //}
-    //val1 := reflect.ValueOf(u1)
-    //ind1 := reflect.Indirect(val1)
-    //log.Info(ind1.Type())
-    ////name := "main.user"
-    //
-    //v := reflect.New(reflect.TypeOf(*u1))
-    //v2 := v.Elem().Interface().(User)
-    //
-    //log.Info(v,v2)
-    //log.Info(u1)
-    //
-    ////v3 := reflect.New(val1.Type())
-    ////log.Info(v3)
+    fmt.Println(p.User.Name)
 }
 
 func createUser() {
@@ -81,7 +86,7 @@ func createPost() {
     
     p := new(Post)
     p.User = u
-    p.Name = "moyi is shabi"
+    p.Name = "this is name"
     
     orm.Create(p)
     
@@ -100,17 +105,11 @@ func createMessage() {
     
     p := new(Post)
     orm.Pk(p, 1)
-    
-    //m := new(Message)
-    //orm.Defaults(m)
-    //m.User = u
-    //m.Post = p
-    //
-    //orm.Create(m)
+
     m := &Message {
         User: u,
         Post: p,
-        Content: "张信哲（再多的苦我也愿意背)",
+        Content: "this is content)",
     }
     orm.Create(m)
 }

@@ -9,19 +9,20 @@ golang 的 ORM，除了mysql，未做其他数据库的兼容。大繁至简，�
 
 // models.go 
 type User struct {
-    Name string     `default:"default_name"`
-    Age uint16      `default:"18"`
-    Score float64  `default:"11"`
+	BaseModel
+	Name string     `default:"default_name"`
+	Age uint16      `default:"18"`
+	Score float64  `default:"11"`
 }
 
 type Post struct {
-    BaseModel
-    User *User
-    Name string
+	BaseModel
+	User *User
+	Name string
 }
 
 func init() {
-    orm.Register(new(User), new(Post), new(Message))
+    orm.Register(new(User), new(Post))
 }
 
 // main.go
@@ -32,7 +33,7 @@ func main() {
 	}
 	defer orm.Close()
     
-    // 创建单个object
+	// 创建单个object
 	u := new(User)
 	orm.Defaults(u) // 自动填充default
 	orm.Create(u)
@@ -55,8 +56,6 @@ func main() {
 	// 检索
 	var posts []Post
 	orm.Query("name = 'hello'").Desc("id").All(&posts)
-	
-
 }
 
 
@@ -66,3 +65,4 @@ func main() {
 如果tag值有key-value的，直接写在tag里，如：`default:"timest" size:"255"`。
 
 如果是单独的值，需要包含在`orm`里，如果多值用`,`分隔,如`orm:"unique,null,pk"`
+

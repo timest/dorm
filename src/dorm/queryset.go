@@ -16,9 +16,11 @@ type QuerySet struct {
     order string
 }
 
-func (q *QuerySet) Query(d string) *QuerySet {
-    log.Info("filter ：", d)
-    q.where = d
+func (q *QuerySet) Query(d ...interface{}) *QuerySet {
+    if len(d) > 0 {
+        //log.Info("filter ：", d, len(d))
+        q.where = d[0].(string)
+    }
     return q
 }
 

@@ -7,6 +7,8 @@ import (
     "strings"
     "github.com/Sirupsen/logrus"
     "strconv"
+    "errors"
+    "bytes"
 )
 
 var log = logrus.New()
@@ -33,19 +35,19 @@ func (o *Orm) Close() {
     o.DB.Close()
 }
 
-func (o *Orm) Query(d string) *QuerySet {
+func (o *Orm) Query(d ...interface{}) *QuerySet {
     q := &QuerySet{
         orm: o,
     }
-    return q.Query(d)
+    return q.Query(d...)
 }
 
 func register(d interface{}) {
     val := reflect.ValueOf(d)
-    _struct := reflect.Indirect(val)
-    mn := getModelName(_struct)
-    mi := &modelInfo{name: mn, table: tableName(val), typ: _struct.Type()}
-    parseField(val.Elem(), mi)
+    ind := reflect.Indirect(val)
+    mn := getModelName(ind)
+    mi := &modelInfo{name: mn, table: tableName(val), typ: ind.Type()}
+    parseField(ind, mi)
     modelCache.set(mn, mi)
 }
 
@@ -54,16 +56,17 @@ func register(d interface{}) {
 // 顺便处理field的tag属性，如 pk
 func parseField(e reflect.Value, mi *modelInfo) {
     for i := 0; i < e.NumField(); i++ {
-        fd := e.Field(i)
+        fd := e.Field(i) // 字段内容
         // 如果遇到struct(如basemodel)就递归进去继续读取字段
         if fd.Kind() == reflect.Interface {
             continue
         } else if fd.Kind() == reflect.Struct {
             parseField(fd, mi)
         } else {
-            sf := e.Type().Field(i)
+            sf := e.Type().Field(i) // 字段名称
             // 只处理能识别的类型 (目前是：string uint int float )  interface 直接continue
             if _, ok := dbfiled[sf.Type.Name()]; !ok {
+                // 判断是否为外键
                 if strings.Index(sf.Type.String(), ".") != -1 {
                     // todo: 有 . 就是外键吗？如xxx.xxx
                     var rel string = sf.PkgPath
@@ -100,6 +103,9 @@ func parseTag(f *field, tag *reflect.StructTag) {
             f.pk = true
         }
     }
+    if fn := tag.Get("field"); fn != "" {
+        f.name = fn
+    }
 }
 
 func (o *Orm) Register(data ...interface{}) {
@@ -112,13 +118,29 @@ type BaseModel struct {
     Id uint     `orm:"pk"`
 }
 
+// 通过数据库的字段名，查询struct的字段名
+func structFieldName(ind reflect.Value, fieldName string) string {
+    for i := 0; i < ind.NumField(); i++ {
+        if ind.Type().Field(i).Name == fieldName {
+            return fieldName
+        }
+        if ind.Type().Field(i).Tag.Get("field") == fieldName {
+            return ind.Type().Field(i).Name
+        }
+    }
+    return fieldName
+}
+
 func getValueList(data interface{}, fList []string) []interface{} {
     log.Info("为", fList, " 准备插入的数据")
     val := reflect.ValueOf(data) // data 是 &Object
+    ind := reflect.Indirect(val)
     var out []interface{}
     for _, k := range fList {
         CheckFiled:
-        v := reflect.Indirect(val).FieldByName(k)
+        var v reflect.Value
+        // 如果有field tag的，用tag代替name
+        v = ind.FieldByName(structFieldName(ind, k))
         switch v.Kind() {
         case reflect.String:
             //log.Info("string:", v.String())
@@ -151,7 +173,7 @@ func getValueList(data interface{}, fList []string) []interface{} {
 func (o *Orm) Create(data ...interface{}) {
     for _, d := range data {
         mi := modelCache.get(d)
-        cols := mi.fields.cols(&fieldFilter{})  // 不需要主键
+        cols := mi.fields.cols(&fieldFilter{PK_NOT_NEED, RAW_NOT_NEED})  // 不需要主键
         payload := make([]string, len(cols))
         for i, _ := range cols {
             payload[i] = "?"
@@ -160,14 +182,62 @@ func (o *Orm) Create(data ...interface{}) {
         pl := getValueList(d, cols)
         rawSql := fmt.Sprintf("insert into %s(%s) values(%s)", mi.table, strings.Join(cols, ","), strings.Join(payload, ","))
         log.Info("query:", rawSql)
-        o, err := o.DB.Exec(rawSql, pl...)
+        out, err := o.DB.Exec(rawSql, pl...)
         errCheck(err)
-        logResult(o)
+        logResult(out)
     }
 }
 
+// 目前只支持单个修改
+func (o *Orm) Update(d interface{}) error {
+    //slice  := false
+    ind := reflect.Indirect(reflect.ValueOf(d))
+    typ := ind.Type()
+    //if ind.Kind() == reflect.Slice {
+    //    slice = true
+    //    typ = ind.Type().Elem()
+    //}
+    mi := modelCache.getByName(typ.Name())
+    cols := mi.fields.cols(&fieldFilter{PK_NOT_NEED, RAW_NOT_NEED})  // 不需要主键
+    pl := getValueList(d, cols)
+    if len(cols) != len(pl) || len(cols) == 0 {
+        log.Info(len(cols), len(pl))
+        return errors.New("字段数量不匹配")
+    }
+    var buf bytes.Buffer
+    buf.WriteString("update " + mi.table + " set ")
+    for i, k := range cols {
+        //log.Info(pl[i].(type))
+        //buf.WriteString(k + " = `" + pl[i].(string) + "`")
+        if i != 0 {
+            buf.WriteString(", ")
+        }
+        buf.WriteString(k + " = ")
+
+        switch t := pl[i].(type) {
+        case string:
+            buf.WriteString(`"` + t +`"`)
+        case int, int8, int16, int32:
+            // todo
+        case int64:
+            buf.WriteString(strconv.FormatInt(pl[i].(int64), 10))
+        case uint, uint8, uint16, uint32, uint64:
+            buf.WriteString(strconv.Itoa(int(pl[i].(uint))))
+        default:
+            return errors.New(k + " 是什么类型?目前没有识别")
+        }
+    }
+    v := ind.FieldByName("Id")
+    buf.WriteString(" where id = " + strconv.FormatUint(v.Uint(), 10))
+    log.Info("SQL:", buf.String())
+    o.DB.Exec(buf.String())
+    _, err := o.DB.Exec(buf.String())
+    errCheck(err)
+    return err
+}
+
 func (o *Orm) retrieve(d interface{}, q *QuerySet) error {
-    var slice bool = false
+    slice  := false
     ind := reflect.Indirect(reflect.ValueOf(d))
     typ := ind.Type()
     if ind.Kind() == reflect.Slice {
@@ -175,8 +245,8 @@ func (o *Orm) retrieve(d interface{}, q *QuerySet) error {
         typ = ind.Type().Elem()
     }
     mi := modelCache.getByName(typ.Name())
-    rawCols := mi.fields.cols(&fieldFilter{pk: true, raw: true})
-    log.Info("query:", q.sql())
+    rawCols := mi.fields.cols(&fieldFilter{pk: PK_NEED, raw: RAW_NEED})
+    //log.Info("query:", q.sql())
     rows, err := o.DB.Query(q.sql())
     if err != nil {
         log.Fatal(err)
@@ -197,7 +267,7 @@ func (o *Orm) retrieve(d interface{}, q *QuerySet) error {
         
         rows.Scan(ref...)
         for i, r := range ref {
-            xxx := obj.FieldByName(rawCols[i])
+            xxx := obj.FieldByName(structFieldName(obj, rawCols[i]))
             v := reflect.Indirect(reflect.ValueOf(r)).Interface()
             switch mi.fields.index(i).typ {
             case "string":
@@ -298,6 +368,9 @@ func (o *Orm) Defaults(m interface{}) {
 }
 
 func logResult(o sql.Result) {
+    if o == nil {
+        return
+    }
     a, _ := o.LastInsertId()
     b, _ := o.RowsAffected()
     log.Info("db.exec insert:", a, b)
@@ -305,7 +378,7 @@ func logResult(o sql.Result) {
 
 func errCheck(err error) {
     if err != nil {
-        log.Fatal(err)
+        log.Print(err)
     }
 }
 
